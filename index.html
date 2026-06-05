@@ -420,14 +420,15 @@ footer{text-align:center;padding:20px 0 6px;font-family:'DM Mono',monospace;
   </div>
   <div class="gauge-num">
     <div class="gauge-num-v" id="g-val">--x</div>
-    <div class="gauge-num-l">現在 BETA · 綠圈 = 目標 BETA</div>
+    <div class="gauge-num-l">現在 BETA · 綠圈 = 目標（持倉% × 2）</div>
   </div>
   <div class="gauge-axis"><span>0x 全現金</span><span>1.0x 平衡</span><span>2.0x 全槓桿</span></div>
   <!-- Target beta slider (display only) -->
   <div class="beta-slider-row" style="margin-top:14px">
-    <span class="beta-sl-lbl">目標 Beta<br><span style="font-size:9px;color:var(--t3)">（下方滑桿調整）</span></span>
-    <input type="range" class="sl" id="tgt-beta-sl" min="0.1" max="2.0" step="0.01" value="0.6" readonly style="flex:1;opacity:.7;cursor:default" title="此滑桿顯示動態目標Beta，請用下方「設定目標持倉比例」調整">
-    <span class="beta-sl-val" id="tgt-beta-sl-val">1.20x</span>
+    <span class="beta-sl-lbl">目標 Beta<br><span style="font-size:9px;color:var(--t3)">持倉%×2，下方滑桿調整</span></span>
+    <input type="range" class="sl" id="tgt-beta-sl" min="0.1" max="2.0" step="0.01" value="0.6" readonly style="flex:1;opacity:.45;cursor:not-allowed;pointer-events:none" title="此滑桿為唯讀顯示">
+    <span class="beta-sl-val" id="tgt-beta-sl-val">0.60x</span>
+  <span style="font-size:8px;color:var(--t3);background:var(--bg2);border:1px solid var(--b2);border-radius:3px;padding:2px 5px;flex-shrink:0">唯讀</span>
   </div>
   <!-- Allocation bars -->
   <div style="margin-top:10px">
@@ -502,8 +503,8 @@ footer{text-align:center;padding:20px 0 6px;font-family:'DM Mono',monospace;
 <!-- Baseline slider -->
 <div class="bc">
   <div class="bc-top">
-    <span class="bc-title">⚙️ 設定目標持倉比例</span>
-    <span class="bc-hint">初學者建議 30%</span>
+    <span class="bc-title">⚙️ 拖曳這裡設定目標持倉</span>
+    <span class="bc-hint" style="color:var(--gold);font-weight:500">← 這個才有用</span>
   </div>
   <div class="bc-big-row">
     <div class="bc-big" id="bl-pct">30%</div>
@@ -511,9 +512,9 @@ footer{text-align:center;padding:20px 0 6px;font-family:'DM Mono',monospace;
       <span style="color:var(--t3)">其餘 <strong id="bl-cash-pct" style="color:var(--t2)">70%</strong> 保持現金</span>
     </div>
   </div>
-  <input type="range" class="sl" id="bl-sl" min="10" max="60" value="30" step="5" oninput="onBase(this.value)">
+  <input type="range" class="sl" id="bl-sl" min="10" max="60" value="30" step="5" oninput="onBase(this.value)" style="accent-color:var(--gold)">
   <div class="bc-marks">
-    <span>10%<br>保守</span><span>20%</span><span>30%<br>建議</span><span>40%</span><span>50%</span><span>60%<br>積極</span>
+    <span>10%<br>Beta 0.2x</span><span>20%<br>0.4x</span><span>30%<br>0.6x</span><span>40%<br>0.8x</span><span>50%<br>1.0x</span><span>60%<br>1.2x</span>
   </div>
   <div class="shift-info">
     <div class="si-item"><div class="si-val" id="si-base" style="color:var(--t2)">30%</div><div class="si-lbl">基準</div></div>
@@ -769,6 +770,7 @@ footer{text-align:center;padding:20px 0 6px;font-family:'DM Mono',monospace;
       <div class="sfield"><div class="sflbl">大盤 P/B</div><input class="sfinp" type="number" id="cfg-pb" placeholder="2.1" step="0.01"></div>
     </div>
     <button class="sfapply" onclick="applySet()">套用設定 →</button>
+    <button onclick="resetCooldown()" style="width:100%;margin-top:8px;background:var(--rdBg);border:1px solid rgba(192,57,43,.25);border-radius:10px;color:var(--red);font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.1em;padding:11px;cursor:pointer;">🔄 清除冷卻期紀錄</button>
   </div>
 </div>
 
@@ -785,7 +787,7 @@ const HIST_KEY       = 'b_hist_v2';
 const LAST_REBAL_KEY = 'b_last_rebal';
 
 let MACRO = { signal:25, pb:2.10 };
-let PORT  = { shares:0, cash:100000 };
+let PORT  = { shares:0, cash:0 };
 let BASE  = 30;
 
 // ── State ────────────────────────────────────────────────
@@ -834,9 +836,10 @@ function computeRebal(tgt){
   const dev=tgt.betaTgt>0?(curBeta-tgt.betaTgt)/tgt.betaTgt:0;
   const deviates=Math.abs(dev)>REBAL_THRESH;
   // Anti-whipsaw: check days since last rebal
+  // 若持股為0（尚未買進），直接跳過冷卻判斷
   const lastRebalTs=parseInt(localStorage.getItem(LAST_REBAL_KEY)||'0');
   const daysSince=lastRebalTs?(Date.now()-lastRebalTs)/(1000*86400):999;
-  const canRebal=daysSince>=WHIPSAW_DAYS;
+  const canRebal=(PORT.shares===0)||daysSince>=WHIPSAW_DAYS;
   const req=deviates&&canRebal;
   const tgtEV=tot*tgt.etfPct, dEV=tgtEV-ev;
   const dS=S.price>0?dEV/S.price:0;
@@ -1019,7 +1022,12 @@ function onTgtBetaSlide(val){ /* display only */ }
 // RENDER ALL
 // ══════════════════════════════════════════════════════════
 function renderAll(){
-  if(!S.price){S.price=66.4;S.prev=65.8;S.chg=.6;S.pct=.91;if(!S.hist.length){S.hist=genDemo(66.4,756);buildDemoOHLC();}S.src='demo';}
+  // 若還沒有股價，用合理的 demo 值讓畫面可以互動
+  if(!S.price){
+    S.price=36.7; S.prev=36.7; S.chg=0; S.pct=0;
+    if(!S.hist.length){ S.hist=genDemo(36.7,756); buildDemoOHLC(); }
+    S.src='demo';
+  }
   const mc=macro(),tgt=getTarget(mc.total),rb=computeRebal(tgt);
   const sig=rVol(S.hist,20),drag=vDrag(2,sig);
   renderBanner(rb,tgt);
@@ -1650,6 +1658,17 @@ function onBase(v){
   BASE=parseInt(v);
   document.getElementById('bl-pct').textContent=`${BASE}%`;
   document.getElementById('bl-cash-pct').textContent=`${100-BASE}%`;
+  // Show live betaTgt preview while dragging
+  const mc2=macro(), tgt=getTarget(mc2.total);
+  const tslv=document.getElementById('tgt-beta-sl-val');
+  if(tslv) tslv.textContent=tgt.betaTgt.toFixed(2)+'x';
+  const tsl=document.getElementById('tgt-beta-sl');
+  if(tsl) tsl.value=tgt.betaTgt.toFixed(2);
+  renderAll();
+}
+function resetCooldown(){
+  localStorage.removeItem(LAST_REBAL_KEY);
+  alert('✅ 冷卻期已清除，系統將重新評估再平衡條件');
   renderAll();
 }
 function applySet(){
@@ -1687,6 +1706,10 @@ if(location.protocol==='file:'){
   w.innerHTML='⚠ <strong>file://</strong> 模式無法連線。請上傳至 <a href="https://pages.github.com" target="_blank" style="color:#ffe">GitHub Pages</a> 或執行 <code>python3 -m http.server</code>，或在下方「設定」手動輸入股價。';
   document.body.prepend(w);
 }
+// 清除所有本機暫存資料（首次載入時重置）
+localStorage.removeItem('b_hist_v2');
+localStorage.removeItem('b_last_rebal');
+
 loadAll();
 setInterval(loadAll,5*60*1000);
 attachChartEvents();
