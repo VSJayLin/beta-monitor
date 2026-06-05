@@ -196,6 +196,18 @@ input[type=range].slider:active::-webkit-slider-thumb{box-shadow:0 0 0 4px rgba(
 }
 .ctab.active{background:var(--bg3);color:var(--gold);font-weight:500;box-shadow:var(--sh)}
 .cwrap{position:relative;width:100%;height:200px}
+.pbtn{
+  font-family:'DM Mono',monospace;font-size:10px;padding:5px 9px;
+  border-radius:6px;border:1px solid var(--b2);color:var(--t3);
+  background:transparent;cursor:pointer;transition:all .15s;
+}
+.pbtn.active,.pbtn:active{background:var(--bg2);color:var(--gold);border-color:var(--goldD)}
+.mabtn{
+  font-family:'DM Mono',monospace;font-size:9px;padding:4px 7px;
+  border-radius:5px;border:1px solid var(--b2);color:var(--t3);
+  background:transparent;cursor:pointer;transition:all .15s;
+}
+.mabtn.active{border-color:var(--b2);color:var(--t2);background:var(--bg2)}
 
 /* ── Pie/Donut ──────────────────────── */
 .pie-row{display:flex;align-items:center;gap:16px}
@@ -436,13 +448,37 @@ footer{text-align:center;padding:20px 0 6px;font-family:'DM Mono',monospace;font
 
 <!-- Price Chart -->
 <div class="slbl">價格走勢</div>
-<div class="card" style="animation-delay:.28s">
-  <div class="ctabs">
-    <button class="ctab active" onclick="setChart('line',this)">折線</button>
-    <button class="ctab" onclick="setChart('candle',this)">K線</button>
-    <button class="ctab" onclick="setChart('beta',this)">Beta</button>
+<div class="card" id="chart-card" style="animation-delay:.28s;padding:14px 12px 12px;">
+  <!-- Mode tabs -->
+  <div class="ctabs" style="margin-bottom:10px">
+    <button class="ctab active" id="tab-line"   onclick="setCMode('line',this)">折線</button>
+    <button class="ctab"        id="tab-candle" onclick="setCMode('candle',this)">K線</button>
+    <button class="ctab"        id="tab-beta"   onclick="setCMode('beta',this)">Beta</button>
   </div>
-  <div class="cwrap"><canvas id="pchart" role="img" aria-label="00631L走勢圖">走勢圖</canvas></div>
+  <!-- Period + MA controls -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px">
+    <div style="display:flex;gap:4px" id="period-btns">
+      <button class="pbtn" onclick="setPeriod('1M',this)">1月</button>
+      <button class="pbtn" onclick="setPeriod('3M',this)">3月</button>
+      <button class="pbtn active" onclick="setPeriod('1Y',this)">1年</button>
+      <button class="pbtn" onclick="setPeriod('3Y',this)">3年</button>
+      <button class="pbtn" onclick="setPeriod('ALL',this)">全部</button>
+    </div>
+    <div style="display:flex;gap:4px" id="ma-btns">
+      <button class="mabtn active" onclick="toggleMA('5',this)">MA5</button>
+      <button class="mabtn active" onclick="toggleMA('20',this)">MA20</button>
+      <button class="mabtn active" onclick="toggleMA('60',this)">MA60</button>
+      <button class="mabtn"        onclick="toggleMA('120',this)">MA120</button>
+      <button class="mabtn"        onclick="toggleMA('240',this)">MA240</button>
+    </div>
+  </div>
+  <!-- Canvas -->
+  <div style="position:relative;width:100%;touch-action:none" id="chart-outer">
+    <canvas id="pchart" style="width:100%;display:block"></canvas>
+    <canvas id="pchart-vol" style="width:100%;display:block;margin-top:2px"></canvas>
+  </div>
+  <!-- Crosshair info bar -->
+  <div id="chart-info" style="font-family:'DM Mono',monospace;font-size:10px;color:var(--t2);margin-top:6px;min-height:16px;line-height:1.5"></div>
 </div>
 
 <!-- Allocation Pie -->
@@ -636,7 +672,7 @@ const SHEETS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTRZphxP
 const FM_BASE  = 'https://api.finmindtrade.com/api/v4/data';
 const CP1      = 'https://corsproxy.io/?';
 const CP2      = 'https://api.allorigins.win/raw?url=';
-const YF_URL   = 'https://query1.finance.yahoo.com/v8/finance/chart/00631L.TW?interval=1d&range=1y';
+const YF_URL   = 'https://query1.finance.yahoo.com/v8/finance/chart/00631L.TW?interval=1d&range=5y';
 const REBAL = 0.10;
 
 let MACRO = { signal: 25, pb: 2.10 };
@@ -651,7 +687,7 @@ let S = {
 };
 let notifOn = false, nLog = [], nChk = { r:false, p:true, m:false, d:false };
 let lastReg = null, lastReq = false;
-let pChart = null, dChart = null, cMode = 'line';
+let dChart = null;
 
 // ════════════════════════════════════════
 // CLOCK + DAILY TRIGGER
@@ -765,12 +801,12 @@ function applyFM(rows){
 // ── Main market data fetcher ───────────────────────────────────────
 async function fetchMkt(){
   const today = new Date();
-  const start = new Date(today); start.setFullYear(start.getFullYear()-1);
+  const start = new Date(today); start.setFullYear(start.getFullYear()-5);
   const startStr = start.toISOString().slice(0,10);
 
   // ① FinMind — CORS open, free tier, no token for basic queries
   try{
-    const url = `${FM_BASE}?dataset=TaiwanStockPrice&data_id=00631L&start_date=${startStr}&limit=300`;
+    const url = `${FM_BASE}?dataset=TaiwanStockPrice&data_id=00631L&start_date=2019-01-01&limit=2000`;
     const res = await tFetch(url, 12000);
     if(!res.ok) throw new Error('FM HTTP '+res.status);
     const d   = await res.json();
@@ -1034,59 +1070,404 @@ function renderStress(beta,tot){
 }
 
 // ════════════════════════════════════════
-// PRICE CHART
+// PRICE CHART  — custom Canvas renderer
 // ════════════════════════════════════════
-function setChart(m,btn){
-  cMode=m;
+
+// ── Chart state ───────────────────────
+let cMode     = 'line';
+let cPeriod   = '1Y';
+let maVisible = { '5':true,'20':true,'60':true,'120':false,'240':false };
+let cView     = { start:0, end:1 };   // fraction of full dataset [0..1]
+let pinchDist = null;
+let dragX     = null;
+
+const MA_COLORS = { '5':'#e67e22','20':'#2980b9','60':'#27ae60','120':'#8e44ad','240':'#c0392b' };
+
+function setCMode(m, btn){
+  cMode = m;
   document.querySelectorAll('.ctab').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  if(pChart){pChart.destroy();pChart=null;}
-  renderPChart();
+  // hide MA buttons on beta mode
+  document.getElementById('ma-btns').style.display = m==='beta' ? 'none' : 'flex';
+  drawChart();
 }
-function renderPChart(){
-  if(!S.hist.length)return;
-  const ctx=document.getElementById('pchart').getContext('2d');
-  if(pChart){pChart.destroy();pChart=null;}
-  const N=Math.min(S.hist.length,90);
-  const hist=S.hist.slice(-N);
-  const ohlcv=S.ohlcv.slice(-N);
-  const lbl=ohlcv.map(d=>{const dt=d.t instanceof Date?d.t:new Date(d.t);return`${dt.getMonth()+1}/${dt.getDate()}`;});
-  const TT={backgroundColor:'#ffffff',titleColor:'#1a1a1a',bodyColor:'#5a5750',borderColor:'rgba(0,0,0,.1)',borderWidth:1,titleFont:{family:'DM Mono, monospace',size:11},bodyFont:{family:'DM Mono, monospace',size:10}};
-  const TX={color:'#9a9790',font:{family:'DM Mono, monospace',size:9},maxTicksLimit:8,maxRotation:0};
-  const GRD={color:'rgba(0,0,0,.05)'};
-  if(cMode==='line'){
-    const ma20=hist.map((_,i)=>i<19?null:hist.slice(i-19,i+1).reduce((a,b)=>a+b,0)/20);
-    const ma60=hist.map((_,i)=>i<59?null:hist.slice(i-59,i+1).reduce((a,b)=>a+b,0)/60);
-    pChart=new Chart(ctx,{type:'line',data:{labels:lbl,datasets:[
-      {label:'00631L',data:hist,borderColor:'#1a5ca8',borderWidth:2,fill:true,backgroundColor:'rgba(26,92,168,.06)',pointRadius:0,tension:.35},
-      {label:'MA20',data:ma20,borderColor:'#c45c0a',borderWidth:1.2,fill:false,pointRadius:0,tension:.35,borderDash:[4,2]},
-      {label:'MA60',data:ma60,borderColor:'#1a7a4a',borderWidth:1.2,fill:false,pointRadius:0,tension:.35,borderDash:[6,3]},
-    ]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
-      plugins:{legend:{display:true,position:'top',labels:{font:{family:'DM Mono, monospace',size:10},color:'#5a5750',boxWidth:12,padding:10}},tooltip:{...TT,callbacks:{label:c=>`  ${c.dataset.label}: NT$${c.raw?.toFixed(2)||'--'}`}}},
-      scales:{x:{grid:{display:false},ticks:TX},y:{grid:GRD,ticks:{...TX,callback:v=>`$${v.toFixed(0)}`}}}}});
-  } else if(cMode==='candle'){
-    const colors=ohlcv.map(d=>d.c>=d.o?'#1a7a4a':'#c0392b');
-    pChart=new Chart(ctx,{type:'bar',data:{labels:lbl,datasets:[
-      {label:'實體',data:ohlcv.map(d=>[Math.min(d.o,d.c),Math.max(d.o,d.c)]),backgroundColor:colors,borderColor:colors,borderWidth:1,borderSkipped:false,barPercentage:.5},
-      {label:'影線',data:ohlcv.map(d=>[d.l,d.h]),backgroundColor:colors.map(c=>c+'44'),borderColor:colors,borderWidth:1,borderSkipped:false,barPercentage:.1},
-    ]},options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{...TT,callbacks:{title:items=>`${lbl[items[0].dataIndex]}`,label:(c)=>{const d=ohlcv[c.dataIndex];return[`開: NT$${d.o.toFixed(2)}`,`高: NT$${d.h.toFixed(2)}`,`低: NT$${d.l.toFixed(2)}`,`收: NT$${d.c.toFixed(2)}`];}}}},
-      scales:{x:{grid:{display:false},ticks:TX},y:{grid:GRD,ticks:{...TX,callback:v=>`$${v.toFixed(0)}`}}}}});
-  } else {
-    const mc=macro(),tgt=getTarget(mc.total);
-    const betas=hist.map(c=>(PORT.shares*c*2)/(PORT.shares*c+PORT.cash));
-    const tl=Array(N).fill(tgt.betaTgt);
-    const ul=Array(N).fill(tgt.betaTgt*(1+REBAL)),ll=Array(N).fill(tgt.betaTgt*(1-REBAL));
-    pChart=new Chart(ctx,{type:'line',data:{labels:lbl,datasets:[
-      {label:'Portfolio Beta',data:betas,borderColor:'#8a6a1e',borderWidth:2,fill:false,pointRadius:0,tension:.35},
-      {label:`目標 ${tgt.betaTgt.toFixed(2)}x`,data:tl,borderColor:'#1a5ca8',borderWidth:1.5,fill:false,pointRadius:0,borderDash:[6,3]},
-      {label:'上限',data:ul,borderColor:'#c0392b',borderWidth:1,fill:false,pointRadius:0,borderDash:[3,3]},
-      {label:'下限',data:ll,borderColor:'#1a7a4a',borderWidth:1,fill:false,pointRadius:0,borderDash:[3,3]},
-    ]},options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:true,position:'top',labels:{font:{family:'DM Mono, monospace',size:10},color:'#5a5750',boxWidth:12,padding:10}},tooltip:{...TT,callbacks:{label:c=>`  ${c.dataset.label}: ${c.raw?.toFixed(4)}x`}}},
-      scales:{x:{grid:{display:false},ticks:TX},y:{grid:GRD,ticks:{...TX,callback:v=>`${v.toFixed(2)}x`}}}}});
+function setPeriod(p, btn){
+  cPeriod = p;
+  document.querySelectorAll('.pbtn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  const n = S.ohlcv.length;
+  const days = {
+    '1M': 22, '3M': 66, '1Y': 252, '3Y': 756, 'ALL': n
+  }[p] || 252;
+  const shown = Math.min(days, n);
+  cView.start = (n - shown) / n;
+  cView.end   = 1;
+  drawChart();
+}
+function toggleMA(k, btn){
+  maVisible[k] = !maVisible[k];
+  btn.classList.toggle('active', maVisible[k]);
+  drawChart();
+}
+
+// ── MA calculation ────────────────────
+function calcMA(closes, period){
+  return closes.map((_, i) =>
+    i < period-1 ? null : closes.slice(i-period+1, i+1).reduce((a,b)=>a+b,0)/period
+  );
+}
+
+// ── Main draw entry ───────────────────
+function drawChart(){
+  const data = S.ohlcv;
+  if(!data || data.length < 2) return;
+
+  const outer  = document.getElementById('chart-outer');
+  const canvas = document.getElementById('pchart');
+  const volCvs = document.getElementById('pchart-vol');
+  const W      = outer.clientWidth || 360;
+  const H      = cMode === 'beta' ? 220 : 200;
+  const HV     = cMode === 'beta' ? 0   : 50;
+
+  // DPR for crisp rendering
+  const dpr = window.devicePixelRatio || 1;
+  [canvas, volCvs].forEach((c,i) => {
+    const h = i===0 ? H : HV;
+    c.width  = W * dpr;
+    c.height = h * dpr;
+    c.style.width  = W  + 'px';
+    c.style.height = h  + 'px';
+    const cx = c.getContext('2d');
+    cx.scale(dpr, dpr);
+  });
+
+  const n    = data.length;
+  const iS   = Math.max(0,   Math.floor(cView.start * n));
+  const iE   = Math.min(n-1, Math.ceil (cView.end   * n) - 1);
+  const slice = data.slice(iS, iE+1);
+  const closes = slice.map(d=>d.c);
+
+  if(cMode === 'line')   drawLine  (canvas, volCvs, slice, closes, W, H, HV);
+  else if(cMode==='candle') drawCandle(canvas, volCvs, slice, W, H, HV);
+  else                   drawBeta  (canvas, slice, W, H);
+}
+
+// ── Shared layout helpers ─────────────
+const PAD = { t:12, r:8, b:28, l:52 };
+
+function priceToY(price, minP, maxP, H){
+  return PAD.t + (1-(price-minP)/(maxP-minP)) * (H - PAD.t - PAD.b);
+}
+function idxToX(i, total, W){
+  return PAD.l + (i/(total-1||1)) * (W - PAD.l - PAD.r);
+}
+function drawAxes(ctx, slice, minP, maxP, W, H, color){
+  ctx.strokeStyle = 'rgba(0,0,0,.06)';
+  ctx.fillStyle   = '#9a9790';
+  ctx.font        = `${9 * (window.devicePixelRatio||1) / (window.devicePixelRatio||1)}px DM Mono,monospace`;
+  ctx.textAlign   = 'right';
+
+  // Y axis
+  const steps = 5;
+  for(let i=0;i<=steps;i++){
+    const p = minP + (maxP-minP)*(i/steps);
+    const y = priceToY(p, minP, maxP, H);
+    ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(W-PAD.r, y);
+    ctx.stroke();
+    ctx.fillText('$'+p.toFixed(p<10?2:0), PAD.l-3, y+3);
+  }
+
+  // X axis labels
+  ctx.textAlign = 'center';
+  const labelCount = Math.min(6, slice.length);
+  const step = Math.floor(slice.length / labelCount);
+  for(let i=0;i<slice.length;i+=step||1){
+    const d  = slice[i].t instanceof Date ? slice[i].t : new Date(slice[i].t);
+    const lb = slice.length > 200
+      ? `${d.getFullYear()}/${(d.getMonth()+1).toString().padStart(2,'0')}`
+      : `${(d.getMonth()+1)}/${d.getDate()}`;
+    ctx.fillText(lb, idxToX(i, slice.length, W), H - PAD.b + 12);
   }
 }
+
+// ── Line chart ────────────────────────
+function drawLine(canvas, volCvs, slice, closes, W, H, HV){
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,W,H);
+
+  const minP = Math.min(...closes)*0.998;
+  const maxP = Math.max(...closes)*1.002;
+  drawAxes(ctx, slice, minP, maxP, W, H);
+
+  // MA lines
+  const allCloses = S.ohlcv.slice(0, S.ohlcv.indexOf(slice[0])+slice.length).map(d=>d.c);
+  Object.entries(MA_COLORS).forEach(([period, color])=>{
+    if(!maVisible[period]) return;
+    const ma = calcMA(allCloses, +period);
+    const sliceMA = ma.slice(allCloses.length - slice.length);
+    ctx.beginPath(); ctx.strokeStyle=color; ctx.lineWidth=1.2; ctx.setLineDash([]);
+    let started=false;
+    sliceMA.forEach((v,i)=>{
+      if(v==null)return;
+      const x=idxToX(i,slice.length,W), y=priceToY(v,minP,maxP,H);
+      if(!started){ctx.moveTo(x,y);started=true;}else ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+  });
+
+  // Price area
+  const grad = ctx.createLinearGradient(0,PAD.t,0,H-PAD.b);
+  grad.addColorStop(0,'rgba(26,92,168,.15)');
+  grad.addColorStop(1,'rgba(26,92,168,.01)');
+  ctx.beginPath(); ctx.strokeStyle='#1a5ca8'; ctx.lineWidth=2; ctx.setLineDash([]);
+  closes.forEach((c,i)=>{
+    const x=idxToX(i,closes.length,W), y=priceToY(c,minP,maxP,H);
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+  // Fill
+  ctx.lineTo(idxToX(closes.length-1,closes.length,W), H-PAD.b);
+  ctx.lineTo(idxToX(0,closes.length,W), H-PAD.b);
+  ctx.closePath(); ctx.fillStyle=grad; ctx.fill();
+
+  drawVolume(volCvs, slice, W, HV);
+}
+
+// ── Candle chart ──────────────────────
+function drawCandle(canvas, volCvs, slice, W, H, HV){
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,W,H);
+
+  const allH = slice.map(d=>d.h), allL = slice.map(d=>d.l);
+  const minP = Math.min(...allL)*0.999;
+  const maxP = Math.max(...allH)*1.001;
+  drawAxes(ctx, slice, minP, maxP, W, H);
+
+  const n      = slice.length;
+  const barW   = Math.max(1, Math.min(12, (W-PAD.l-PAD.r)/n*0.7));
+
+  slice.forEach((d,i)=>{
+    const x    = idxToX(i, n, W);
+    const bull = d.c >= d.o;
+    const col  = bull ? '#1a7a4a' : '#c0392b';
+    const yH   = priceToY(d.h, minP, maxP, H);
+    const yL   = priceToY(d.l, minP, maxP, H);
+    const yO   = priceToY(d.o, minP, maxP, H);
+    const yC   = priceToY(d.c, minP, maxP, H);
+
+    // Wick
+    ctx.beginPath(); ctx.strokeStyle=col; ctx.lineWidth=1;
+    ctx.moveTo(x, yH); ctx.lineTo(x, yL); ctx.stroke();
+
+    // Body
+    const bodyTop = Math.min(yO,yC);
+    const bodyH   = Math.max(1, Math.abs(yC-yO));
+    ctx.fillStyle = bull ? col : col;
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1;
+    if(bodyH <= 1){
+      ctx.beginPath(); ctx.moveTo(x-barW/2,bodyTop); ctx.lineTo(x+barW/2,bodyTop); ctx.stroke();
+    } else {
+      ctx.fillRect(x-barW/2, bodyTop, barW, bodyH);
+      if(!bull){ ctx.strokeRect(x-barW/2, bodyTop, barW, bodyH); }
+    }
+  });
+
+  drawVolume(volCvs, slice, W, HV);
+}
+
+// ── Beta chart ────────────────────────
+function drawBeta(canvas, slice, W, H){
+  const mc2 = macro(), tgt = getTarget(mc2.total);
+  const ctx  = canvas.getContext('2d');
+  ctx.clearRect(0,0,W,H);
+
+  const betas = slice.map(d=>{
+    const ev = PORT.shares * d.c;
+    return (ev*2)/(ev + PORT.cash);
+  });
+  const tB = tgt.betaTgt;
+  const minB = Math.min(...betas, tB*0.85);
+  const maxB = Math.max(...betas, tB*1.15);
+
+  // Axes
+  ctx.strokeStyle='rgba(0,0,0,.06)'; ctx.fillStyle='#9a9790';
+  ctx.font='9px DM Mono,monospace'; ctx.textAlign='right';
+  [0,.25,.5,.75,1].forEach(f=>{
+    const v = minB + (maxB-minB)*f;
+    const y = PAD.t+(1-f)*(H-PAD.t-PAD.b);
+    ctx.beginPath(); ctx.moveTo(PAD.l,y); ctx.lineTo(W-PAD.r,y); ctx.stroke();
+    ctx.fillText(v.toFixed(2)+'x', PAD.l-3, y+3);
+  });
+  ctx.textAlign='center';
+  const step=Math.floor(slice.length/6)||1;
+  for(let i=0;i<slice.length;i+=step){
+    const d=slice[i].t instanceof Date?slice[i].t:new Date(slice[i].t);
+    ctx.fillText(`${d.getMonth()+1}/${d.getDate()}`, idxToX(i,slice.length,W), H-PAD.b+12);
+  }
+
+  // Safe zone band
+  const yU = PAD.t+(1-(tB*(1+REBAL)-minB)/(maxB-minB))*(H-PAD.t-PAD.b);
+  const yL = PAD.t+(1-(tB*(1-REBAL)-minB)/(maxB-minB))*(H-PAD.t-PAD.b);
+  ctx.fillStyle='rgba(26,122,74,.08)';
+  ctx.fillRect(PAD.l, Math.min(yU,yL), W-PAD.l-PAD.r, Math.abs(yU-yL));
+
+  // Target line
+  const yT = PAD.t+(1-(tB-minB)/(maxB-minB))*(H-PAD.t-PAD.b);
+  ctx.beginPath(); ctx.strokeStyle='#1a5ca8'; ctx.lineWidth=1.5; ctx.setLineDash([6,3]);
+  ctx.moveTo(PAD.l,yT); ctx.lineTo(W-PAD.r,yT); ctx.stroke(); ctx.setLineDash([]);
+
+  // Beta line
+  ctx.beginPath(); ctx.strokeStyle='#8a6a1e'; ctx.lineWidth=2;
+  betas.forEach((b,i)=>{
+    const x=idxToX(i,betas.length,W);
+    const y=PAD.t+(1-(b-minB)/(maxB-minB))*(H-PAD.t-PAD.b);
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+
+  // Rebal trigger dots
+  betas.forEach((b,i)=>{
+    if(Math.abs(b-tB)/tB > REBAL){
+      const x=idxToX(i,betas.length,W);
+      const y=PAD.t+(1-(b-minB)/(maxB-minB))*(H-PAD.t-PAD.b);
+      ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2);
+      ctx.fillStyle=b>tB?'#c0392b':'#1a7a4a'; ctx.fill();
+    }
+  });
+
+  // Legend
+  ctx.font='10px DM Mono,monospace'; ctx.textAlign='left';
+  ctx.fillStyle='#8a6a1e'; ctx.fillRect(PAD.l,12,18,3);
+  ctx.fillStyle='#5a5750'; ctx.fillText('Portfolio Beta',PAD.l+22,16);
+  ctx.fillStyle='#1a5ca8'; ctx.fillRect(PAD.l+120,12,18,3);
+  ctx.fillText(`目標 ${tB.toFixed(2)}x`,PAD.l+142,16);
+}
+
+// ── Volume bars ───────────────────────
+function drawVolume(canvas, slice, W, HV){
+  if(HV <= 0) return;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,W,HV);
+  const vols  = slice.map(d=>d.v||0);
+  const maxV  = Math.max(...vols)||1;
+  const n     = slice.length;
+  const barW  = Math.max(1, (W-PAD.l-PAD.r)/n*0.7);
+  slice.forEach((d,i)=>{
+    const x  = idxToX(i,n,W);
+    const h  = (d.v||0)/maxV*(HV-6);
+    const bull= d.c>=d.o;
+    ctx.fillStyle = bull ? 'rgba(26,122,74,.4)' : 'rgba(192,57,43,.4)';
+    ctx.fillRect(x-barW/2, HV-h, barW, h);
+  });
+}
+
+// ── Touch/mouse zoom & pan ────────────
+function chartTouchStart(e){
+  if(e.touches.length===2){
+    pinchDist = Math.hypot(
+      e.touches[0].clientX-e.touches[1].clientX,
+      e.touches[0].clientY-e.touches[1].clientY
+    );
+    dragX = null;
+  } else if(e.touches.length===1){
+    dragX = e.touches[0].clientX;
+    pinchDist = null;
+  }
+}
+function chartTouchMove(e){
+  e.preventDefault();
+  const n = S.ohlcv.length;
+  if(!n) return;
+
+  if(e.touches.length===2 && pinchDist!==null){
+    // Pinch zoom
+    const newDist = Math.hypot(
+      e.touches[0].clientX-e.touches[1].clientX,
+      e.touches[0].clientY-e.touches[1].clientY
+    );
+    const scale  = newDist / pinchDist;
+    const span   = cView.end - cView.start;
+    const mid    = (cView.start + cView.end) / 2;
+    const newSpan= Math.max(0.02, Math.min(1, span / scale));
+    cView.start  = Math.max(0, mid - newSpan/2);
+    cView.end    = Math.min(1, mid + newSpan/2);
+    pinchDist    = newDist;
+    drawChart();
+  } else if(e.touches.length===1 && dragX!==null){
+    // Pan
+    const outer = document.getElementById('chart-outer');
+    const W     = outer.clientWidth || 360;
+    const dx    = (e.touches[0].clientX - dragX) / W;
+    const span  = cView.end - cView.start;
+    let ns = cView.start - dx;
+    let ne = cView.end   - dx;
+    if(ns<0){ne-=ns;ns=0;}
+    if(ne>1){ns-=(ne-1);ne=1;}
+    cView.start = Math.max(0,ns);
+    cView.end   = Math.min(1,ne);
+    dragX       = e.touches[0].clientX;
+    drawChart();
+  }
+}
+function chartTouchEnd(){ pinchDist=null; dragX=null; }
+
+// Mouse wheel zoom (desktop)
+function chartWheel(e){
+  e.preventDefault();
+  const span   = cView.end - cView.start;
+  const mid    = (cView.start + cView.end) / 2;
+  const factor = e.deltaY > 0 ? 1.15 : 0.87;
+  const newSpan= Math.max(0.02, Math.min(1, span*factor));
+  cView.start  = Math.max(0, mid - newSpan/2);
+  cView.end    = Math.min(1, mid + newSpan/2);
+  drawChart();
+}
+
+// Crosshair on tap/hover
+function chartCrosshair(e){
+  const outer  = document.getElementById('chart-outer');
+  const canvas = document.getElementById('pchart');
+  const rect   = canvas.getBoundingClientRect();
+  const cx     = (e.touches?.[0]?.clientX ?? e.clientX) - rect.left;
+  const n      = S.ohlcv.length;
+  const iS     = Math.floor(cView.start*n);
+  const iE     = Math.ceil (cView.end  *n)-1;
+  const slice  = S.ohlcv.slice(iS,iE+1);
+  if(!slice.length)return;
+  const W     = rect.width;
+  const i     = Math.max(0,Math.min(slice.length-1, Math.round((cx-PAD.l)/(W-PAD.l-PAD.r)*(slice.length-1))));
+  const d     = slice[i];
+  if(!d)return;
+  const dt    = d.t instanceof Date?d.t:new Date(d.t);
+  const ds    = `${dt.getFullYear()}/${(dt.getMonth()+1).toString().padStart(2,'0')}/${dt.getDate().toString().padStart(2,'0')}`;
+  const info  = document.getElementById('chart-info');
+  if(cMode==='candle'){
+    const bull=d.c>=d.o;
+    info.innerHTML=`<span style="color:var(--t3)">${ds}</span>　開 <b>${d.o.toFixed(2)}</b>　高 <b style="color:#1a7a4a">${d.h.toFixed(2)}</b>　低 <b style="color:#c0392b">${d.l.toFixed(2)}</b>　收 <b style="color:${bull?'#1a7a4a':'#c0392b'}">${d.c.toFixed(2)}</b>`;
+  } else if(cMode==='beta'){
+    const ev=PORT.shares*d.c;
+    const b=((ev*2)/(ev+PORT.cash)).toFixed(4);
+    info.innerHTML=`<span style="color:var(--t3)">${ds}</span>　Beta <b style="color:#8a6a1e">${b}x</b>　價格 <b>${d.c.toFixed(2)}</b>`;
+  } else {
+    info.innerHTML=`<span style="color:var(--t3)">${ds}</span>　NT$<b>${d.c.toFixed(2)}</b>`;
+  }
+}
+
+// ── Attach events ─────────────────────
+function attachChartEvents(){
+  const outer = document.getElementById('chart-outer');
+  outer.addEventListener('touchstart',  chartTouchStart, {passive:true});
+  outer.addEventListener('touchmove',   chartTouchMove,  {passive:false});
+  outer.addEventListener('touchend',    chartTouchEnd,   {passive:true});
+  outer.addEventListener('wheel',       chartWheel,      {passive:false});
+  outer.addEventListener('mousemove',   chartCrosshair);
+  outer.addEventListener('touchmove',   chartCrosshair,  {passive:true});
+}
+
+// ── renderPChart → drawChart wrapper ─
+function renderPChart(){ drawChart(); }
+function setChart(m,btn){ setCMode(m,btn); }
 
 // ════════════════════════════════════════
 // BASELINE SLIDER
@@ -1096,7 +1477,7 @@ function onBaselineChange(v){
   document.getElementById('bl-pct').textContent=`${BASE}%`;
   document.getElementById('bl-cash-pct').textContent=`${100-BASE}%`;
   document.getElementById('si-base').textContent=`${BASE}%`;
-  if(pChart&&cMode==='beta'){pChart.destroy();pChart=null;}
+  drawChart();
   renderAll();
 }
 
@@ -1158,7 +1539,6 @@ function applySet(){
     document.getElementById('sdot').className='sdot sstale';
     document.getElementById('stxt').textContent='手動輸入股價模式';
   }
-  if(pChart){pChart.destroy();pChart=null;}
   renderAll();
 }
 
@@ -1185,6 +1565,9 @@ if(location.protocol==='file:'){
 
 loadAll();
 setInterval(loadAll,5*60*1000);
+attachChartEvents();
+// Redraw on resize
+window.addEventListener('resize',()=>{ if(S.ohlcv.length) drawChart(); });
 </script>
 </body>
 </html>
