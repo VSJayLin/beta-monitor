@@ -394,20 +394,17 @@ footer{text-align:center;padding:20px 0 6px;font-family:'DM Mono',monospace;
 </div>
 
 
-<!-- ── Beta Gauge ── -->
+<!-- ── Beta 監控整合卡 ── -->
 <div class="gauge-card">
+
+  <!-- 上半：儀表 -->
   <div class="gauge-wrap">
     <svg id="gauge-svg" viewBox="0 0 200 110" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <!-- Track -->
       <path id="g-track" d="M15,105 A90,90 0 0,1 185,105" stroke="#e6e2d8" stroke-width="10" stroke-linecap="round" fill="none"/>
-      <!-- Safe zone (green band) -->
       <path id="g-safe" d="" stroke="rgba(26,122,74,0.18)" stroke-width="10" stroke-linecap="butt" fill="none"/>
-      <!-- Active arc -->
-      <path id="g-arc" d="" stroke="url(#gaugeGrad)" stroke-width="10" stroke-linecap="round" fill="none"/>
-      <!-- Needle -->
+      <path id="g-arc"  d="" stroke="url(#gaugeGrad)" stroke-width="10" stroke-linecap="round" fill="none"/>
       <line id="g-needle" x1="100" y1="105" x2="100" y2="28" stroke="var(--gold)" stroke-width="2.5" stroke-linecap="round"/>
       <circle cx="100" cy="105" r="5" fill="var(--gold)"/>
-      <!-- Target dot (white circle) -->
       <circle id="g-target-dot" cx="100" cy="18" r="5" fill="none" stroke="#1a7a4a" stroke-width="2"/>
       <defs>
         <linearGradient id="gaugeGrad" x1="0" y1="0" x2="1" y2="0">
@@ -418,44 +415,62 @@ footer{text-align:center;padding:20px 0 6px;font-family:'DM Mono',monospace;
       </defs>
     </svg>
   </div>
-  <div class="gauge-num">
-    <div class="gauge-num-v" id="g-val">--x</div>
-    <div class="gauge-num-l">現在 BETA · 綠圈 = 目標（持倉% × 2）</div>
-  </div>
-  <div class="gauge-axis"><span>0x 全現金</span><span>1.0x 平衡</span><span>2.0x 全槓桿</span></div>
-  <!-- Target beta slider (display only) -->
-  <div class="beta-slider-row" style="margin-top:14px">
-    <span class="beta-sl-lbl">目標 Beta<br><span style="font-size:9px;color:var(--t3)">持倉%×2，下方滑桿調整</span></span>
-    <input type="range" class="sl" id="tgt-beta-sl" min="0.1" max="2.0" step="0.01" value="0.6" readonly style="flex:1;opacity:.45;cursor:not-allowed;pointer-events:none" title="此滑桿為唯讀顯示">
-    <span class="beta-sl-val" id="tgt-beta-sl-val">0.60x</span>
-  <span style="font-size:8px;color:var(--t3);background:var(--bg2);border:1px solid var(--b2);border-radius:3px;padding:2px 5px;flex-shrink:0">唯讀</span>
-  </div>
-  <!-- Allocation bars -->
-  <div style="margin-top:10px">
-    <div class="alloc-bar-row">
-      <span class="alloc-tag">正2</span>
-      <div class="alloc-track"><div class="alloc-fill" id="g-bar-etf" style="width:0%;background:#1a5ca8"></div></div>
-      <span class="alloc-num" id="g-num-etf">--%</span>
-    </div>
-    <div class="alloc-bar-row">
-      <span class="alloc-tag">現金</span>
-      <div class="alloc-track"><div class="alloc-fill" id="g-bar-cash" style="width:0%;background:#c8c4bc"></div></div>
-      <span class="alloc-num" id="g-num-cash">--%</span>
-    </div>
-  </div>
-</div>
 
-<!-- ── Deviation Panel ── -->
-<div class="dev-panel">
-  <div class="dev-title">偏離分析 · 再平衡建議</div>
-  <!-- Threshold setting -->
-  <div class="dev-threshold-row">
-    <span class="dev-thr-lbl">觸發閾值設定</span>
+  <!-- 兩個數值並排：現在Beta vs 目標Beta -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+    <div style="text-align:center;padding:12px 10px;background:var(--bg2);border-radius:10px;border:1px solid var(--b)">
+      <div style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.12em;color:var(--t3);margin-bottom:6px">目前 BETA</div>
+      <div class="gauge-num-v" id="g-val" style="font-size:26px">--x</div>
+      <div id="g-lbl" style="font-size:10px;color:var(--t3);margin-top:3px">持股後才有數值</div>
+    </div>
+    <div style="text-align:center;padding:12px 10px;background:var(--goldBg);border-radius:10px;border:1px solid rgba(138,106,30,.2)">
+      <div style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.12em;color:var(--gold);margin-bottom:6px">目標 BETA</div>
+      <div id="tgt-beta-sl-val" style="font-family:'DM Mono',monospace;font-size:26px;font-weight:500;color:var(--gold)">0.60x</div>
+      <div style="font-size:10px;color:var(--t3);margin-top:3px">綠圈位置</div>
+    </div>
+  </div>
+
+  <div class="gauge-axis" style="margin-bottom:14px"><span>0x 全現金</span><span>1.0x 平衡</span><span>2.0x 全槓桿</span></div>
+
+  <!-- 分隔線 -->
+  <div style="border-top:1px solid var(--b);margin:0 -18px 14px"></div>
+
+  <!-- 下半：目標設定滑桿 -->
+  <div style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.15em;color:var(--t3);margin-bottom:10px">⚙️ 設定目標持倉比例</div>
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+    <div style="font-family:'DM Mono',monospace;font-size:32px;font-weight:500;color:var(--gold);flex-shrink:0" id="bl-pct">30%</div>
+    <div style="font-size:11px;color:var(--t2);line-height:1.65">正2 ETF 基準比例<br>
+      <span style="color:var(--t3)">其餘 <strong id="bl-cash-pct" style="color:var(--t2)">70%</strong> 保持現金</span>
+    </div>
+  </div>
+  <input type="range" class="sl" id="bl-sl" min="10" max="60" value="30" step="5"
+    oninput="onBase(this.value)" style="accent-color:var(--gold)">
+  <div class="bc-marks" style="margin-top:6px">
+    <span>10%<br>0.2x</span><span>20%<br>0.4x</span><span>30%<br>0.6x</span>
+    <span>40%<br>0.8x</span><span>50%<br>1.0x</span><span>60%<br>1.2x</span>
+  </div>
+
+  <!-- 溫度調整說明 -->
+  <div class="shift-info" style="margin-top:12px">
+    <div class="si-item"><div class="si-val" id="si-base" style="color:var(--t2)">30%</div><div class="si-lbl">你設定</div></div>
+    <div class="si-arrow">→</div>
+    <div class="si-item"><div class="si-val" id="si-shift" style="color:var(--amb)">--</div><div class="si-lbl">溫度調整</div></div>
+    <div class="si-arrow">→</div>
+    <div class="si-item"><div class="si-val" id="si-final" style="color:var(--gold)">30%</div><div class="si-lbl">實際目標</div></div>
+  </div>
+
+  <!-- 分隔線 -->
+  <div style="border-top:1px solid var(--b);margin:14px -18px 14px"></div>
+
+  <!-- 偏離分析 -->
+  <div style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.15em;color:var(--t3);margin-bottom:10px">📐 偏離分析</div>
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;
+    background:var(--bg2);border-radius:9px;padding:10px 12px">
+    <span style="font-size:11px;color:var(--t2);flex:1">觸發閾值</span>
     偏離超過 ±
     <input type="number" class="dev-thr-inp" id="dev-thr" value="10" min="1" max="30" oninput="renderAll()">
-    %  時觸發
+    %
   </div>
-  <!-- Upper / Lower limits -->
   <div class="dev-limits">
     <div class="dev-limit-box upper">
       <div class="dev-limit-lbl">上限 Beta</div>
@@ -468,8 +483,7 @@ footer{text-align:center;padding:20px 0 6px;font-family:'DM Mono',monospace;
       <div class="dev-limit-act">→ 買槓桿</div>
     </div>
   </div>
-  <!-- Deviation amount + status -->
-  <div class="dev-result">
+  <div class="dev-result" style="margin-top:8px">
     <div class="dev-result-box">
       <div class="dev-result-lbl">Beta 偏離量</div>
       <div class="dev-result-val" id="dev-delta">--</div>
@@ -479,16 +493,11 @@ footer{text-align:center;padding:20px 0 6px;font-family:'DM Mono',monospace;
       <div class="dev-result-val" id="dev-state">--</div>
     </div>
   </div>
-  <!-- Status box -->
-  <div class="dev-status ok" id="dev-status-box">
+  <div class="dev-status ok" id="dev-status-box" style="margin-top:8px">
     <span class="dev-status-icon">✅</span>
     <span class="dev-status-txt" id="dev-status-txt">計算中...</span>
   </div>
-  <!-- Precise adjustment amounts -->
-  <div class="dev-adj-row">
-    <span class="dev-adj-lbl">若精確達到目標 Beta</span>
-  </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
     <div style="background:var(--rdBg);border:1px solid rgba(192,57,43,.15);border-radius:9px;padding:10px 12px">
       <div style="font-size:10px;color:var(--t3);margin-bottom:4px">槓桿調整</div>
       <div class="dev-adj-val" id="dev-etf-adj" style="color:var(--red)">--</div>
@@ -498,30 +507,12 @@ footer{text-align:center;padding:20px 0 6px;font-family:'DM Mono',monospace;
       <div class="dev-adj-val" id="dev-cash-adj" style="color:var(--green)">--</div>
     </div>
   </div>
-</div>
 
-<!-- Baseline slider -->
-<div class="bc">
-  <div class="bc-top">
-    <span class="bc-title">⚙️ 拖曳這裡設定目標持倉</span>
-    <span class="bc-hint" style="color:var(--gold);font-weight:500">← 這個才有用</span>
-  </div>
-  <div class="bc-big-row">
-    <div class="bc-big" id="bl-pct">30%</div>
-    <div class="bc-desc">正2 ETF 基準比例<br>
-      <span style="color:var(--t3)">其餘 <strong id="bl-cash-pct" style="color:var(--t2)">70%</strong> 保持現金</span>
-    </div>
-  </div>
-  <input type="range" class="sl" id="bl-sl" min="10" max="60" value="30" step="5" oninput="onBase(this.value)" style="accent-color:var(--gold)">
-  <div class="bc-marks">
-    <span>10%<br>Beta 0.2x</span><span>20%<br>0.4x</span><span>30%<br>0.6x</span><span>40%<br>0.8x</span><span>50%<br>1.0x</span><span>60%<br>1.2x</span>
-  </div>
-  <div class="shift-info">
-    <div class="si-item"><div class="si-val" id="si-base" style="color:var(--t2)">30%</div><div class="si-lbl">基準</div></div>
-    <div class="si-arrow">→</div>
-    <div class="si-item"><div class="si-val" id="si-shift" style="color:var(--amb)">--</div><div class="si-lbl">溫度調整</div></div>
-    <div class="si-arrow">→</div>
-    <div class="si-item"><div class="si-val" id="si-final" style="color:var(--gold)">30%</div><div class="si-lbl">當前目標</div></div>
+  <!-- Hidden JS binding -->
+  <div style="display:none">
+    <input id="tgt-beta-sl" type="range" value="0.6">
+    <span id="g-num-etf"></span><span id="g-num-cash"></span>
+    <div id="g-bar-etf"></div><div id="g-bar-cash"></div>
   </div>
 </div>
 
@@ -958,10 +949,15 @@ function updateGauge(curBeta, tgtBeta, threshold){
   document.getElementById('g-target-dot').setAttribute('cy', tp.y.toFixed(2));
 
   // Gauge number color
-  const dev=Math.abs(curBeta-tgtBeta)/tgtBeta*100;
   const gv=document.getElementById('g-val');
   gv.textContent=curBeta.toFixed(3)+'x';
-  gv.style.color=dev<threshold?'var(--green)':dev<threshold*1.5?'var(--amb)':'var(--red)';
+  if(PORT.shares===0){
+    // 持股為0是正常初始狀態，顯示灰色
+    gv.style.color='var(--t2)';
+  } else {
+    const dev=Math.abs(curBeta-tgtBeta)/tgtBeta*100;
+    gv.style.color=dev<threshold?'var(--green)':dev<threshold*1.5?'var(--amb)':'var(--red)';
+  }
 }
 
 function updateAllocBars(curEtfPct, tgtEtfPct){
@@ -1049,6 +1045,11 @@ function renderAll(){
   // Gauge + deviation panel
   const thr=parseFloat(document.getElementById('dev-thr')?.value)||10;
   updateGauge(rb.curBeta, tgt.betaTgt, thr);
+  // Update gauge label
+  const glbl=document.getElementById('g-lbl');
+  if(glbl) glbl.textContent = PORT.shares===0
+    ? '尚未持有 00631L · 買進後 Beta 才會大於 0'
+    : '現在 BETA · 綠圈 = 目標（持倉% × 2）';
   updateAllocBars(rb.curPct, tgt.etfPct);
   updateDevPanel(rb, tgt);
   // Update gauge slider display (read-only)
