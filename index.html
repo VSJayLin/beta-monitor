@@ -89,7 +89,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:18p
 .banner.sell {background:rgba(248,113,113,.08); border:1.5px solid rgba(248,113,113,.30)}
 .banner.buy  {background:rgba(251,191,36,.08);  border:1.5px solid rgba(251,191,36,.30)}
 .b-icon{font-size:22px;flex-shrink:0;margin-top:1px}
-.b-title{font-size:14px;font-weight:500;line-height:1.45}
+.b-title{font-size:17px;font-weight:700;line-height:1.45}
 .b-title.ok   {color:var(--green)}.b-title.sell{color:var(--red)}.b-title.buy{color:var(--amb)}
 .b-sub{font-size:11px;color:var(--t2);margin-top:4px;line-height:1.6}
 
@@ -871,7 +871,12 @@ function buildDemoOHLC(){
 // RENDER
 // ════════════════════════════════════════
 function renderAll(){
-  if(!S.price)return;
+  if(!S.price){
+    // No price yet — use demo so UI is never blank
+    S.price=66.4; S.prev=65.8; S.chg=.6; S.pct=.91;
+    if(!S.hist.length){ S.hist=genDemo(66.4,270); buildDemoOHLC(); }
+    S.src='demo';
+  }
   const mc=macro(), tgt=getTarget(mc.total), rb=rebal(tgt);
   const sig=rVol(S.hist,20), drag=vDrag(2,sig);
   renderBanner(rb,tgt);
@@ -891,14 +896,23 @@ function renderAll(){
 function renderBanner(rb,tgt){
   const el=document.getElementById('banner'),tl=document.getElementById('btitle'),sl=document.getElementById('bsub');
   if(!rb.req){
-    el.className='banner ok';tl.className='b-title ok';
-    tl.textContent='✅ 訊號正常：目前比例很安全，無須變動，安心過生活。';
-    sl.textContent=`Beta ${rb.curBeta.toFixed(3)}x，在目標 ${tgt.betaTgt.toFixed(2)}x 的 ±10% 範圍內`;
+    // ── 綠色：安全，不用動 ──
+    el.className='banner ok';
+    tl.className='b-title ok';
+    tl.textContent='✅ 安全：不需要任何操作，安心持有。';
+    sl.innerHTML=`目前持有 <strong>${PORT.shares.toLocaleString()} 股</strong> 00631L＋現金 <strong>NT$${Math.round(PORT.cash).toLocaleString()}</strong><br>`
+      +`Beta ${rb.curBeta.toFixed(3)}x，目標 ${tgt.betaTgt.toFixed(2)}x，偏離 ${(rb.dev*100).toFixed(1)}%（安全範圍 ±10%）`;
   } else {
-    const buy=rb.dS>0;
-    el.className=`banner ${buy?'buy':'sell'}`;tl.className=`b-title ${buy?'buy':'sell'}`;
-    tl.textContent=`🚨 觸發再平衡：請至國泰證券 App ${buy?'買進':'賣出'} 精確 ${Math.abs(rb.dS).toLocaleString()} 股 00631L（約 NT$${Math.abs(rb.dV).toLocaleString()}）`;
-    sl.textContent=`Beta 偏離 ${(rb.dev*100).toFixed(1)}%，超過 ±10% 觸發門檻`;
+    const buy = rb.dS > 0;
+    // ── 紅/黃：需要行動，明確告知股數和金額 ──
+    el.className = `banner ${buy?'buy':'sell'}`;
+    tl.className = `b-title ${buy?'buy':'sell'}`;
+    tl.innerHTML = buy
+      ? `🟢 現在請<strong>買進</strong> <u>${Math.abs(rb.dS).toLocaleString()} 股</u> 00631L<br><span style="font-size:13px">花費約 NT$${Math.abs(rb.dV).toLocaleString()}</span>`
+      : `🔴 現在請<strong>賣出</strong> <u>${Math.abs(rb.dS).toLocaleString()} 股</u> 00631L<br><span style="font-size:13px">回收約 NT$${Math.abs(rb.dV).toLocaleString()}</span>`;
+    sl.innerHTML =
+      `操作後持股：<strong>${rb.tgtS.toLocaleString()} 股</strong>，現金：<strong>NT$${rb.tgtC.toLocaleString()}</strong><br>`
+      +`請至國泰證券 App → 台股交易 → 00631L → ${buy?'買進':'賣出'} → 輸入 ${Math.abs(rb.dS).toLocaleString()} 股`;
   }
 }
 function renderStatus(){
