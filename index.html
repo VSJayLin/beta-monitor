@@ -1410,7 +1410,7 @@ function chartTouchMove(e){
     drawChart();
   }
 }
-function chartTouchEnd(){ pinchDist=null; dragX=null; }
+function chartTouchEnd(e){ pinchDist=null; dragX=null; if(!e||e.touches.length===0) clearCrosshair(); }
 
 // Mouse wheel zoom (desktop)
 function chartWheel(e){
@@ -1424,34 +1424,178 @@ function chartWheel(e){
   drawChart();
 }
 
-// Crosshair on tap/hover
+// ── Crosshair state ──────────────────
+let _chX = null;  // current crosshair canvas-X (null = hidden)
+
+function clearCrosshair(){
+  _chX = null;
+  drawChart();
+  document.getElementById('chart-info').innerHTML = '';
+}
+
+// Draw crosshair overlay on top of the existing chart frame
+function paintCrosshair(canvas, cx, cy, W, H, label, valueLabel, color){
+  const dpr = window.devicePixelRatio || 1;
+  const ctx  = canvas.getContext('2d');
+
+  // Vertical line
+  ctx.save();
+  ctx.setLineDash([4,3]);
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.lineWidth   = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx, PAD.t);
+  ctx.lineTo(cx, H - PAD.b);
+  ctx.stroke();
+
+  // Horizontal line
+  ctx.beginPath();
+  ctx.moveTo(PAD.l, cy);
+  ctx.lineTo(W - PAD.r, cy);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Circle at intersection
+  ctx.beginPath();
+  ctx.arc(cx, cy, 4, 0, Math.PI*2);
+  ctx.fillStyle   = color;
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth   = 1.5;
+  ctx.fill();
+  ctx.stroke();
+
+  // ── Date label on X axis ──
+  const lbW = label.length * 6.5 + 10;
+  const lbX = Math.max(PAD.l + lbW/2, Math.min(W - PAD.r - lbW/2, cx));
+  const lbY = H - PAD.b + 2;
+  ctx.fillStyle = 'rgba(30,30,30,0.82)';
+  roundRect(ctx, lbX - lbW/2, lbY, lbW, 16, 3);
+  ctx.fill();
+  ctx.fillStyle   = '#fff';
+  ctx.font        = '9px DM Mono,monospace';
+  ctx.textAlign   = 'center';
+  ctx.textBaseline= 'middle';
+  ctx.fillText(label, lbX, lbY + 8);
+
+  // ── Price/value label on Y axis ──
+  const vbW = valueLabel.length * 7 + 10;
+  const vbX = 0;
+  const vbY = Math.max(PAD.t + 8, Math.min(H - PAD.b - 8, cy));
+  ctx.fillStyle = color;
+  roundRect(ctx, vbX, vbY - 9, vbW, 18, 3);
+  ctx.fill();
+  ctx.fillStyle   = '#fff';
+  ctx.textAlign   = 'left';
+  ctx.textBaseline= 'middle';
+  ctx.fillText(valueLabel, vbX + 4, vbY);
+
+  ctx.restore();
+}
+
+function roundRect(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y);
+  ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+  ctx.lineTo(x+w, y+h-r);
+  ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+  ctx.lineTo(x+r, y+h);
+  ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+  ctx.lineTo(x, y+r);
+  ctx.quadraticCurveTo(x, y, x+r, y);
+  ctx.closePath();
+}
+
+// Main crosshair handler — called on touch/mouse move
 function chartCrosshair(e){
-  const outer  = document.getElementById('chart-outer');
+  // Ignore if this is part of a pan/pinch gesture
+  if(e.touches && e.touches.length > 1) return;
+  if(e.touches && pinchDist !== null)   return;
+
   const canvas = document.getElementById('pchart');
   const rect   = canvas.getBoundingClientRect();
-  const cx     = (e.touches?.[0]?.clientX ?? e.clientX) - rect.left;
+  const rawX   = (e.touches?.[0]?.clientX ?? e.clientX);
+  const rawY   = (e.touches?.[0]?.clientY ?? e.clientY);
+  const cx     = rawX - rect.left;
+  const cy_raw = rawY - rect.top;
+
+  // Outside chart area → clear
+  if(cx < PAD.l || cx > rect.width - PAD.r){ clearCrosshair(); return; }
+
   const n      = S.ohlcv.length;
-  const iS     = Math.floor(cView.start*n);
-  const iE     = Math.ceil (cView.end  *n)-1;
-  const slice  = S.ohlcv.slice(iS,iE+1);
-  if(!slice.length)return;
-  const W     = rect.width;
-  const i     = Math.max(0,Math.min(slice.length-1, Math.round((cx-PAD.l)/(W-PAD.l-PAD.r)*(slice.length-1))));
-  const d     = slice[i];
-  if(!d)return;
-  const dt    = d.t instanceof Date?d.t:new Date(d.t);
-  const ds    = `${dt.getFullYear()}/${(dt.getMonth()+1).toString().padStart(2,'0')}/${dt.getDate().toString().padStart(2,'0')}`;
-  const info  = document.getElementById('chart-info');
-  if(cMode==='candle'){
-    const bull=d.c>=d.o;
-    info.innerHTML=`<span style="color:var(--t3)">${ds}</span>　開 <b>${d.o.toFixed(2)}</b>　高 <b style="color:#1a7a4a">${d.h.toFixed(2)}</b>　低 <b style="color:#c0392b">${d.l.toFixed(2)}</b>　收 <b style="color:${bull?'#1a7a4a':'#c0392b'}">${d.c.toFixed(2)}</b>`;
-  } else if(cMode==='beta'){
-    const ev=PORT.shares*d.c;
-    const b=((ev*2)/(ev+PORT.cash)).toFixed(4);
-    info.innerHTML=`<span style="color:var(--t3)">${ds}</span>　Beta <b style="color:#8a6a1e">${b}x</b>　價格 <b>${d.c.toFixed(2)}</b>`;
+  const iS     = Math.floor(cView.start * n);
+  const iE     = Math.ceil (cView.end   * n) - 1;
+  const slice  = S.ohlcv.slice(iS, iE+1);
+  if(!slice.length) return;
+
+  const W      = rect.width;
+  const H      = canvas.height / (window.devicePixelRatio||1);
+
+  // Snap to nearest bar
+  const idx = Math.max(0, Math.min(slice.length-1,
+    Math.round((cx - PAD.l) / (W - PAD.l - PAD.r) * (slice.length - 1))
+  ));
+  const d   = slice[idx];
+  if(!d) return;
+
+  const snapX  = idxToX(idx, slice.length, W);
+  const dt     = d.t instanceof Date ? d.t : new Date(d.t);
+  const ds     = `${dt.getFullYear()}/${String(dt.getMonth()+1).padStart(2,'0')}/${String(dt.getDate()).padStart(2,'0')}`;
+
+  let snapY, valueLabel, color, infoHTML;
+
+  if(cMode === 'candle'){
+    const closes = slice.map(x=>x.c);
+    const allH   = slice.map(x=>x.h), allL = slice.map(x=>x.l);
+    const minP   = Math.min(...allL)*0.999;
+    const maxP   = Math.max(...allH)*1.001;
+    snapY        = priceToY(d.c, minP, maxP, H);
+    valueLabel   = d.c.toFixed(2);
+    const bull   = d.c >= d.o;
+    color        = bull ? '#1a7a4a' : '#c0392b';
+    infoHTML     = `<span style="color:var(--t3)">${ds}</span>　`
+      +`開 <b>${d.o.toFixed(2)}</b>　`
+      +`高 <b style="color:#1a7a4a">${d.h.toFixed(2)}</b>　`
+      +`低 <b style="color:#c0392b">${d.l.toFixed(2)}</b>　`
+      +`收 <b style="color:${color}">${d.c.toFixed(2)}</b>　`
+      +`<span style="color:${bull?'#1a7a4a':'#c0392b'}">${bull?'▲':'▼'}${Math.abs(d.c-d.o).toFixed(2)} (${((d.c-d.o)/d.o*100).toFixed(1)}%)</span>`;
+
+  } else if(cMode === 'beta'){
+    const betas  = slice.map(x=>{ const ev=PORT.shares*x.c; return (ev*2)/(ev+PORT.cash); });
+    const tgtB   = getTarget(macro().total).betaTgt;
+    const minB   = Math.min(...betas, tgtB*0.85);
+    const maxB   = Math.max(...betas, tgtB*1.15);
+    const beta   = betas[idx];
+    snapY        = PAD.t + (1-(beta-minB)/(maxB-minB)) * (H-PAD.t-PAD.b);
+    valueLabel   = beta.toFixed(3)+'x';
+    const dev    = (beta-tgtB)/tgtB*100;
+    color        = Math.abs(dev) > REBAL*100 ? (beta>tgtB?'#c0392b':'#1a7a4a') : '#8a6a1e';
+    infoHTML     = `<span style="color:var(--t3)">${ds}</span>　`
+      +`Beta <b style="color:${color}">${beta.toFixed(4)}x</b>　`
+      +`目標 <b>${tgtB.toFixed(4)}x</b>　`
+      +`偏離 <b style="color:${Math.abs(dev)>REBAL*100?'#c0392b':'#1a7a4a'}">${dev>=0?'+':''}${dev.toFixed(1)}%</b>　`
+      +`價格 NT$<b>${d.c.toFixed(2)}</b>`;
+
   } else {
-    info.innerHTML=`<span style="color:var(--t3)">${ds}</span>　NT$<b>${d.c.toFixed(2)}</b>`;
+    // Line chart
+    const minP = Math.min(...slice.map(x=>x.c))*0.998;
+    const maxP = Math.max(...slice.map(x=>x.c))*1.002;
+    snapY      = priceToY(d.c, minP, maxP, H);
+    valueLabel = d.c.toFixed(2);
+    color      = '#1a5ca8';
+    const prev = idx>0 ? slice[idx-1].c : d.c;
+    const chg  = ((d.c-prev)/prev*100).toFixed(2);
+    const bull = d.c >= prev;
+    infoHTML   = `<span style="color:var(--t3)">${ds}</span>　`
+      +`NT$<b>${d.c.toFixed(2)}</b>　`
+      +`<span style="color:${bull?'#1a7a4a':'#c0392b'}">${bull?'▲':'▼'}${Math.abs(chg)}%</span>`;
   }
+
+  // Redraw chart then overlay crosshair
+  drawChart();
+  paintCrosshair(canvas, snapX, snapY, W, H, ds, valueLabel, color);
+
+  document.getElementById('chart-info').innerHTML = infoHTML;
 }
 
 // ── Attach events ─────────────────────
@@ -1462,6 +1606,7 @@ function attachChartEvents(){
   outer.addEventListener('touchend',    chartTouchEnd,   {passive:true});
   outer.addEventListener('wheel',       chartWheel,      {passive:false});
   outer.addEventListener('mousemove',   chartCrosshair);
+  outer.addEventListener('mouseleave',  clearCrosshair);
   outer.addEventListener('touchmove',   chartCrosshair,  {passive:true});
 }
 
