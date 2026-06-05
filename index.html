@@ -667,6 +667,7 @@ footer{text-align:center;padding:20px 0 6px;font-family:'DM Mono',monospace;font
 // ════════════════════════════════════════
 // CONFIG
 // ════════════════════════════════════════
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbw3ORaGziC_V9tpvHqMWMbjt0NUnyIvGCT2qhpQGxK_iAJlTtvkxcbtgx1hEl7kFmc2zQ/exec';
 const SHEETS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTRZphxPlOH2ezq5EgcAazPZtR6ABTDTHA9xfGNwg2WsbPuSMbzpz-gRS73OSMMVPP61cB9VBcZZzCv/pub?output=csv';
 // ── Data source URLs ─────────────────────────────────────────────
 const FM_BASE  = 'https://api.finmindtrade.com/api/v4/data';
@@ -798,52 +799,63 @@ function applyFM(rows){
   S.src='live'; S.updated=new Date();
 }
 
-// ── Main market data fetcher ───────────────────────────────────────
+// ── 單一資料來源：Google Apps Script ──────────────────────────────
+// GAS 同時回傳：試算表持倉 + Yahoo Finance 歷史價格
+// 完全繞過 CORS 問題
 async function fetchMkt(){
-  const today = new Date();
-  const start = new Date(today); start.setFullYear(start.getFullYear()-5);
-  const startStr = start.toISOString().slice(0,10);
-
-  // ① FinMind — CORS open, free tier, no token for basic queries
   try{
-    const url = `${FM_BASE}?dataset=TaiwanStockPrice&data_id=00631L&start_date=2019-01-01&limit=2000`;
-    const res = await tFetch(url, 12000);
-    if(!res.ok) throw new Error('FM HTTP '+res.status);
-    const d   = await res.json();
-    if(d.status===200 && d.data?.length > 5){ applyFM(d.data); return; }
-    throw new Error('FM empty: '+(d.msg||''));
-  }catch(e){ console.warn('FinMind failed:',e.message); }
+    const res = await tFetch(GAS_URL, 15000);
+    if(!res.ok) throw new Error('GAS HTTP '+res.status);
+    const d = await res.json();
 
-  // ② Yahoo via corsproxy.io (sets CORS headers, works from browsers)
-  try{
-    const enc = encodeURIComponent(YF_URL);
-    const res = await tFetch(`${CP1}${enc}`, 12000);
-    if(!res.ok) throw new Error('CP1 HTTP '+res.status);
-    const d   = await res.json();
-    const r   = d?.chart?.result?.[0];
-    if(!r) throw new Error('CP1 empty');
-    applyYF(r); return;
-  }catch(e){ console.warn('corsproxy failed:',e.message); }
+    // ── 股價資料 ──
+    if(d.priceStatus==='ok' && d.price){
+      S.price = d.price;
+      S.prev  = d.prevClose || d.price;
+      S.chg   = S.price - S.prev;
+      S.pct   = S.prev ? (S.chg/S.prev)*100 : 0;
+      S.hist  = d.closes  || [];
+      // Build OHLCV
+      const ts = d.timestamps || [];
+      const op = d.opens   || [];
+      const hi = d.highs   || [];
+      const lo = d.lows    || [];
+      const cl = d.closes  || [];
+      const vo = d.volumes || [];
+      const L  = Math.min(op.length, cl.length, hi.length, lo.length);
+      S.ohlcv  = [];
+      for(let i=0;i<L;i++){
+        const dt = ts[i] ? new Date(ts[i]*1000) : new Date(Date.now()-(L-i)*86400000);
+        S.ohlcv.push({t:dt, o:op[i]??cl[i], h:hi[i]??cl[i], l:lo[i]??cl[i], c:cl[i], v:vo[i]||0});
+      }
+      S.src     = 'live';
+      S.updated = new Date();
+      console.log(`✅ 股價取得成功 → NT$${S.price} (${S.hist.length}筆歷史)`);
+    } else {
+      console.warn('⚠ GAS 股價失敗:', d.priceError);
+      if(!S.price){ S.price=66.4;S.prev=65.8;S.chg=.6;S.pct=.91;S.hist=genDemo(66.4,270);buildDemoOHLC(); }
+      S.src='demo';
+    }
 
-  // ③ Yahoo via allorigins (alternate proxy)
-  try{
-    const enc = encodeURIComponent(YF_URL);
-    const res = await tFetch(`${CP2}${enc}`, 12000);
-    if(!res.ok) throw new Error('CP2 HTTP '+res.status);
-    const txt = await res.text();
-    const d   = JSON.parse(txt);
-    // allorigins wraps in {contents:'...'} sometimes
-    const payload = d?.contents ? JSON.parse(d.contents) : d;
-    const r = payload?.chart?.result?.[0];
-    if(!r) throw new Error('CP2 empty');
-    applyYF(r); return;
-  }catch(e){ console.warn('allorigins failed:',e.message); }
+    // ── 持倉資料 ──
+    if(d.status==='ok'){
+      if(d.shares != null){ PORT.shares=d.shares; const el=document.getElementById('cfg-s');if(el)el.value=d.shares; }
+      if(d.cash   != null){ PORT.cash  =d.cash;   const el=document.getElementById('cfg-c');if(el)el.value=d.cash;   }
+      console.log(`✅ 試算表同步成功 → 股數:${PORT.shares} 現金:${PORT.cash}`);
+    } else {
+      console.warn('⚠ GAS 試算表失敗:', d.error);
+    }
 
-  // ④ All sources failed — activate manual mode
-  S.src = 'manual';
-  if(!S.price){ S.price=66.4; S.prev=65.8; S.chg=.6; S.pct=.91; S.hist=genDemo(66.4,270); buildDemoOHLC(); }
-  showManualPrompt();
+  }catch(e){
+    console.warn('⚠ GAS 連線失敗:', e.message);
+    if(!S.price){ S.price=66.4;S.prev=65.8;S.chg=.6;S.pct=.91;S.hist=genDemo(66.4,270);buildDemoOHLC(); }
+    S.src='demo';
+    showManualPrompt();
+  }
 }
+
+// fetchSheets 已整合進 fetchMkt，保留空函式避免錯誤
+async function fetchSheets(){ }
 
 function showManualPrompt(){
   // Open settings panel and highlight manual price input
@@ -858,43 +870,7 @@ function showManualPrompt(){
   // Scroll to settings after short delay
   setTimeout(()=>document.querySelector('.setcard')?.scrollIntoView({behavior:'smooth',block:'center'}),400);
 }
-async function fetchSheets(){
-  // Direct pub CSV URL — hardcoded from user's Google Sheet
-  const override = (document.getElementById('cfg-gid').value||'').trim();
-  const url = override || SHEETS_CSV_URL;
-  try{
-    // Wrap with corsproxy so Google Sheets CSV works from any origin (file:// or HTTPS)
-    const proxied = url.startsWith('http') ? `${CP1}${encodeURIComponent(url)}` : url;
-    const r = await tFetch(proxied, 8000)
-      .catch(()=> tFetch(`${CP2}${encodeURIComponent(url)}`, 8000));  // fallback proxy
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    const text = await r.text();
-    // Parse CSV rows: A=欄位名稱, B=數值
-    let gotShares=false, gotCash=false;
-    text.trim().split('\n').forEach(row=>{
-      const cols = row.split(',').map(c=>c.replace(/^"|"$/g,'').trim());
-      const key  = (cols[0]||'').trim();
-      const val  = parseFloat((cols[1]||'').replace(/[^0-9.-]/g,''));
-      if(!isNaN(val) && val>=0){
-        if(key.includes('股數')||key.includes('正二')||key.includes('正2')||key.includes('股')){
-          PORT.shares=val; gotShares=true;
-        }
-        if(key.includes('現金')||key.toLowerCase().includes('cash')){
-          PORT.cash=val; gotCash=true;
-        }
-      }
-    });
-    // Reflect in manual input fields
-    if(gotShares){ const el=document.getElementById('cfg-s'); if(el) el.value=PORT.shares; }
-    if(gotCash)  { const el=document.getElementById('cfg-c'); if(el) el.value=PORT.cash;   }
-    if(gotShares||gotCash)
-      console.log(`✅ 試算表讀取成功 → 股數:${PORT.shares} 現金:${PORT.cash}`);
-    else
-      console.warn('⚠ 試算表：找不到「正二股數」或「現金資產」，請確認格式');
-  }catch(e){
-    console.warn('⚠ 試算表讀取失敗:',e.message);
-  }
-}
+
 function genDemo(p,n){const h=[p];for(let i=1;i<n;i++){const d=(Math.random()-.48)*.015;h.unshift(h[0]*(1+d));}return h;}
 function buildDemoOHLC(){
   S.ohlcv=S.hist.map((c,i)=>{
